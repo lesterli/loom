@@ -1,748 +1,640 @@
-# agent-orch Architecture
+# Loom Architecture
+
+Date: 2026-03-14
+Status: Draft
 
 ## Summary
 
-`agent-orch` is a local orchestration layer for multi-agent coding workflows.
-It does not try to replace Codex CLI, Claude Code, or the project's existing test tools.
-Its job is to coordinate them into a repeatable loop:
+`Loom` is a local-first control plane and evaluation dashboard for family learning agents on Apple Silicon.
 
-1. prepare an isolated worktree for a task
-2. ask an executor agent to make progress
-3. run validation commands
-4. ask a reviewer agent to inspect the resulting diff and logs
-5. convert review output into structured follow-up work
-6. continue until success or an explicit stop policy triggers
+The first target environment is:
 
-The core design choice is simple: one system decides what happens next, but it never writes code itself.
-All code changes happen through an executor adapter in a task-specific worktree.
+- host: macOS on Apple Silicon
+- assumed hardware: MacBook Pro M1 Pro, 16 GB unified memory
+- local agent runtime: ZeroClaw
+- backend stack: Rust
+- deployment mode: single-machine, single-household
 
-## Problem Statement
+`Loom` is not the agent itself. ZeroClaw remains the local execution runtime.
+`Loom` sits above it and provides:
 
-Today, the individual pieces already exist:
+- multi-user and role isolation
+- task orchestration for learning flows
+- review scheduling
+- run trace and observability
+- durable learning records
+- a clean operator and developer experience for iterating on prompts, skills, and rules
 
-- Codex CLI can write code and run shell-driven workflows.
-- Claude Code can review code changes and produce high-signal feedback.
-- Git worktrees isolate concurrent tasks cleanly.
-- Local scripts can watch diffs, logs, and test output.
+## Problem
 
-What is missing is the glue that turns those pieces into a reliable closed loop.
+A local family learning agent is not hard to demo, but it is hard to run well over time.
 
-Without an orchestrator, the workflow is brittle:
+The real problems are operational:
 
-- agent sessions are mixed with human state
-- review output is free-form and hard to feed back into the next round
-- retries are ad hoc
-- artifacts are scattered across terminal scrollback and temp files
-- it is hard to answer basic questions such as "what happened in round 3?" or "why did this task stop?"
+- a parent and a child should not have the same permissions
+- content ingestion from textbooks and vocabulary lists needs cleanup and normalization
+- practice should follow a review cadence instead of ad hoc chat
+- each agent run should leave enough trace to debug bad behavior
+- learning records should accumulate into a durable knowledge state
+- prompts, rules, and skills should be easy to update without breaking the whole workflow
 
-`agent-orch` exists to make that loop explicit, inspectable, and reproducible.
+Chat interfaces solve only the last-mile interaction.
+`Loom` exists to provide the control plane around a local learning agent.
 
 ## Goals
 
-1. Run a local execute -> validate -> review -> fix loop with minimal manual coordination.
-2. Keep executor and reviewer responsibilities separate.
-3. Guarantee single-writer semantics per worktree.
-4. Persist enough artifacts to replay or audit every round.
-5. Normalize review results into machine-readable findings and fix items.
-6. Support multiple tool backends without changing orchestration logic.
-7. Stay simple enough for a single-machine MVP.
+1. Run a family learning agent fully locally on Apple Silicon.
+2. Use ZeroClaw as the first local execution runtime.
+3. Separate parent operator permissions from child learner permissions.
+4. Turn learning interactions into structured tasks and review loops.
+5. Persist task runs, traces, outcomes, and learner state locally.
+6. Make prompt, skill, and rule iteration observable and debuggable.
+7. Stay small enough to run comfortably on an M1 Pro with 16 GB memory.
 
 ## Non-Goals
 
-1. Not a general-purpose distributed workflow engine.
-2. Not a replacement for CI, code review, or issue tracking systems.
-3. Not a multi-user collaborative platform.
-4. Not a benchmark harness for final product evaluation.
-5. Not a system where multiple agents write to the same working tree concurrently.
-6. Not a prompt laboratory for optimizing model behavior in the first version.
+1. Not a general LMS.
+2. Not a multi-tenant SaaS platform.
+3. Not a replacement for ZeroClaw runtime internals.
+4. Not a voice-first system in the first version.
+5. Not a mobile-first product in the first version.
+6. Not a broad agent marketplace or plugin ecosystem.
 
 ## Design Principles
 
-### 1. Single writer, multiple readers
+### 1. Local-first by default
 
-At any point, exactly one executor may write to a task worktree.
-Reviewers and validators can read from that worktree or from captured artifacts, but they do not mutate source.
+All core state lives on the machine:
 
-### 2. The orchestrator owns control, not execution
+- learner profiles
+- task definitions
+- review queues
+- run traces
+- artifacts
+- dashboard data
 
-The orchestrator decides the next step, records state transitions, and enforces policy.
-Adapters perform side effects.
+Cloud dependencies should be optional and explicit.
 
-### 3. All important handoffs are structured
+### 2. ZeroClaw is execution, Loom is control
 
-Terminal output and prose are useful for humans, but orchestration needs stable machine-readable records.
-Review output therefore must be normalized into structured findings and fix items.
+ZeroClaw handles local agent execution.
+`Loom` handles orchestration, storage, and observability.
 
-### 4. Local-first and append-only by default
+This keeps the boundary clean:
 
-The first target is a single developer machine.
-Artifacts are stored locally and appended per round so failures remain debuggable.
+- ZeroClaw decides how to run an agent
+- Loom decides when, why, and under what policy an agent run should happen
 
-### 5. Prefer explicit stop conditions over "let it keep trying"
+### 3. Family workflows need explicit roles
 
-Agent loops degrade quickly without strong boundaries.
-Every task must define retry limits, validation gates, and terminal states.
+The system must distinguish at least:
+
+- parent/operator
+- child/learner
+- system agent
+
+The parent configures policy.
+The child triggers or responds to tasks.
+The agent executes within the configured boundary.
+
+### 4. Learning state is not chat history
+
+A family learning system cannot rely on raw conversation logs alone.
+Important state must be normalized:
+
+- vocabulary mastery
+- recent mistakes
+- review due dates
+- practice history
+- agent version and rule version used for each run
+
+### 5. Every automation should be inspectable
+
+If the system generates a bad exercise, grades incorrectly, or schedules poor review tasks, the parent must be able to inspect:
+
+- the input artifact
+- the task selection
+- the runtime configuration
+- the model output
+- the scoring result
 
 ## System Context
 
-`agent-orch` sits above external tools and below any higher-level product workflow.
-
 ```text
-human / script
-      │
-      ▼
-agent-orch
-  ├── workspace manager
-  ├── executor adapter
-  ├── validator adapter
-  ├── reviewer adapter
-  ├── review parser
-  └── artifact store
-      │
-      ├── git worktree
-      ├── codex CLI
-      ├── claude code / hooks
-      └── project-specific test commands
+parent / child UI
+        │
+        ▼
+      Loom
+  ├── API server
+  ├── policy engine
+  ├── scheduler
+  ├── task planner
+  ├── trace recorder
+  ├── learning state store
+  └── dashboard backend
+        │
+        ▼
+   ZeroClaw runtime
+  ├── local model provider
+  ├── tools
+  ├── channels
+  └── sandbox
+        │
+        ▼
+  local files / sqlite / imported materials
 ```
 
-The orchestrator is the control plane.
-Worktrees, agents, and validation commands are the execution plane.
-Artifacts are the system of record between them.
+## Primary Use Cases
 
-## Runtime Model
+### 1. Child practice session
 
-The runtime model is centered on four concepts.
+The child opens a simple interface and receives one task at a time, for example:
 
-### Task
+- use a word in a sentence
+- solve one arithmetic problem
+- answer one reading comprehension question
 
-A task is the unit of orchestration.
-It includes:
+`Loom` records the task, result, score, and next review due date.
 
-- repository root
-- target branch or base commit
-- task instruction
-- executor configuration
-- reviewer configuration
-- validation profile
-- stop policy
+### 2. Parent control and review
 
-Each task maps to exactly one writable worktree at a time.
+The parent can:
 
-### Run
+- create or edit learner profiles
+- import source material
+- inspect daily and weekly progress
+- review traces of bad runs
+- tune rules, prompts, or skills
 
-A run is one attempt to complete a task under a fixed configuration snapshot.
-A task may have multiple runs if the user restarts it with different settings.
+### 3. Material ingestion
 
-### Round
+The parent uploads or pastes:
 
-A round is one full cycle through execution, validation, review, and decision.
-The round is the main accounting unit for artifacts and state transitions.
+- textbook vocabulary
+- worksheet questions
+- teacher notes
+- screenshots or OCR output
 
-### Finding
+`Loom` normalizes these into structured learning items.
 
-A finding is a normalized reviewer output item.
-Each finding includes severity, evidence, affected files, and a recommended fix.
-Findings are then collapsed into a `fixlist.json` for the next executor round.
+### 4. Scheduled review
 
-## High-Level Flow
+The system selects due items and generates a daily queue based on:
 
-```text
-create task
-   │
-   ▼
-prepare worktree
-   │
-   ▼
-execute round N with executor
-   │
-   ▼
-run validation profile
-   │
-   ▼
-collect diff + logs + status
-   │
-   ▼
-review round N with reviewer
-   │
-   ▼
-parse findings into fix list
-   │
-   ├── no blocking findings and validation passes ──→ success
-   │
-   ├── retry budget remains ───────────────────────→ round N+1
-   │
-   └── retry budget exhausted / fatal error ──────→ failed or aborted
-```
+- last performance
+- content type
+- difficulty
+- recency
+- configured review policy
 
-## Control Plane Components
+## High-Level Architecture
 
-### 1. Task Manager
+## 1. Frontend
 
-Responsible for:
+Initial UI can be a thin local web app.
 
-- creating task identifiers
-- resolving repository root and base revision
-- loading task config
-- creating initial run metadata
-- preventing duplicate active writers for the same task
+Main surfaces:
 
-It should reject configurations that cannot be reproduced, such as missing base refs or undefined validation commands.
+- learner session view
+- parent dashboard
+- trace inspector
+- content import page
+- settings and policy page
 
-### 2. Round Coordinator
+The frontend should remain replaceable.
+The architecture assumes a stable Rust API backend first.
 
-Responsible for:
+## 2. Rust Backend
 
-- moving a run from one phase to the next
-- invoking adapters in the right order
-- attaching artifacts to the correct round
-- deciding whether the loop continues
+The Rust backend is the system core.
 
-The coordinator should be deterministic given the same task config, adapter outputs, and repository state.
+Main responsibilities:
 
-### 3. Policy Engine
+- expose local HTTP API
+- manage learner and task state
+- schedule review jobs
+- call ZeroClaw through a stable adapter boundary
+- persist runs and artifacts
+- aggregate dashboard views
 
-Responsible for:
+Candidate stack:
 
-- max round count
-- max consecutive parse failures
-- max consecutive no-op executor rounds
-- validation gating rules
-- escalation rules for human intervention
-- terminal state classification
+- HTTP: `axum`
+- async runtime: `tokio`
+- storage: `sqlite` via `sqlx` or `rusqlite`
+- serialization: `serde`
+- tracing: `tracing`
 
-The policy engine should be strict and boring.
-If the system stops, the reason should always be recorded in a structured way.
+## 3. ZeroClaw Adapter
 
-### 4. Artifact Store
+`Loom` should not couple itself directly to ZeroClaw internals.
+Instead, define a small adapter interface such as:
 
-Responsible for:
+- submit task
+- run agent session
+- fetch execution result
+- collect runtime metadata
+- surface tool and model configuration
 
-- durable round-level storage
-- manifest generation
-- content addressing or stable naming
-- artifact lookup for replay and debugging
+This allows later support for:
 
-The artifact store should treat prompts, outputs, diffs, and parsed review data as first-class records.
+- a mocked local executor for tests
+- a non-ZeroClaw runtime
+- offline replay of runs without invoking the agent
 
-## Data Plane Components
+## 4. Local Data Plane
 
-### 1. Workspace Manager
+All durable state lives locally.
 
-The workspace manager handles git worktrees and source snapshots.
+Recommended split:
+
+- SQLite for normalized operational data
+- filesystem for bulky artifacts
+
+SQLite stores:
+
+- learners
+- profiles
+- tasks
+- runs
+- scores
+- review queue
+- policies
+- imported content metadata
+
+Filesystem stores:
+
+- raw imports
+- OCR text
+- run transcripts
+- trace payloads
+- snapshots of prompts and skill configs
+
+## Core Components
+
+### 1. Identity and Role Manager
+
+Tracks local users and effective permissions.
+
+Minimum roles:
+
+- `parent_admin`
+- `learner`
+- `system`
 
 Responsibilities:
 
-- create task-specific worktrees
-- ensure a clean starting point
-- capture base commit, head commit, and diff
-- detect dirty state before and after executor runs
-- prevent multiple concurrent writers on one worktree
+- enforce visibility boundaries
+- map channels to learner identities
+- keep parent-only settings hidden from learner-facing views
 
-Recommended strategy:
+### 2. Learner Profile Service
 
-- create one worktree per task, named by task id
-- branch naming pattern: `task/<task-id>`
-- record `base_ref`, `base_commit`, `start_commit`, and `end_commit` per round
+Stores structured learner information:
 
-The MVP should assume the repository already exists locally and that git is the source of truth.
+- age / grade
+- subjects
+- difficulty band
+- vocabulary level
+- channel bindings
+- task preferences
+- pacing constraints
 
-### 2. Executor Adapter
+This service provides context to both the scheduler and the agent runtime.
 
-The executor adapter invokes a coding agent such as Codex CLI.
+### 3. Content Ingestion Pipeline
 
-Responsibilities:
+Transforms raw material into structured items.
 
-- render the executor prompt from task context
-- pass structured fix items from previous rounds
-- run the external command in the task worktree
-- capture stdout, stderr, exit code, and duration
-- detect whether the round changed the repository state
+Stages:
 
-Normalized output:
-
-```json
-{
-  "adapter": "codex",
-  "command": ["codex", "exec", "..."],
-  "exit_code": 0,
-  "duration_ms": 123456,
-  "changed_files": ["src/lib.rs", "tests/foo.rs"],
-  "head_commit": "abc123",
-  "status": "completed"
-}
-```
-
-The orchestrator should not depend on Codex-specific response shapes beyond this normalized contract.
-
-### 3. Validator Adapter
-
-The validator adapter runs deterministic checks.
+1. ingest raw text or image-derived text
+2. normalize and deduplicate
+3. classify by subject and type
+4. convert into learning items
+5. attach source metadata
 
 Examples:
 
-- `cargo check`
-- `cargo test`
-- `pytest`
-- benchmark smoke tests
-- formatting or lint checks when required
+- `received` -> `receive`
+- repeated vocabulary collapsed into one canonical item
+- worksheet questions converted into atomic practice items
 
-Responsibilities:
+### 4. Task Planner
 
-- execute commands in a known order
-- capture output and exit status for each command
-- normalize pass/fail/skipped state
-- optionally short-circuit later checks when earlier gates fail
+Creates concrete practice tasks from learner state plus available content.
 
-Validation must remain deterministic and tool-specific, not LLM-specific.
+Examples:
 
-### 4. Reviewer Adapter
+- sentence-building task from vocabulary item
+- single arithmetic question from math pool
+- follow-up question on a recently missed concept
 
-The reviewer adapter invokes a reviewer agent such as Claude Code.
+The planner should prefer one atomic task at a time for young learners.
 
-Responsibilities:
+### 5. Review Scheduler
 
-- construct a review prompt from diff, validation output, and task goal
-- restrict review scope to relevant artifacts
-- capture stdout, stderr, exit code, and duration
-- return raw review text for parsing
-
-Key constraint:
-
-The reviewer should not modify the task worktree.
-If a review tool can run hooks or side effects, the adapter must disable write paths or run in read-only mode where possible.
-
-### 5. Review Parser
-
-The parser converts raw reviewer output into a structured finding set.
-
-Responsibilities:
-
-- extract severity
-- identify evidence references
-- deduplicate repeated findings
-- distinguish blocking issues from suggestions
-- emit stable JSON for the next executor round
-
-If parsing fails, the raw review output is still retained and the policy engine decides whether to retry review, ask for human help, or stop.
-
-## Canonical Data Model
-
-The exact implementation language may change, but the logical schema should stay stable.
-
-### TaskSpec
-
-```json
-{
-  "task_id": "t_20260306_001",
-  "repo_root": "/path/to/repo",
-  "base_ref": "main",
-  "instruction": "Implement feature X and keep tests green",
-  "executor": {
-    "kind": "codex",
-    "profile": "default"
-  },
-  "reviewer": {
-    "kind": "claude",
-    "profile": "review-strict"
-  },
-  "validation_profile": "rust-default",
-  "stop_policy": {
-    "max_rounds": 5,
-    "max_noop_rounds": 2,
-    "max_parse_failures": 2
-  }
-}
-```
-
-### RunRecord
-
-```json
-{
-  "run_id": "run_20260306_001",
-  "task_id": "t_20260306_001",
-  "created_at": "2026-03-06T10:00:00Z",
-  "status": "running",
-  "base_commit": "def456",
-  "worktree_path": "/path/to/.agent-orch/worktrees/t_20260306_001"
-}
-```
-
-### RoundRecord
-
-```json
-{
-  "round": 2,
-  "executor_status": "completed",
-  "validator_status": "failed",
-  "reviewer_status": "completed",
-  "decision": "continue",
-  "start_commit": "abc123",
-  "end_commit": "abc999",
-  "changed": true,
-  "blocking_findings": 2,
-  "suggestions": 1
-}
-```
-
-### Finding
-
-```json
-{
-  "id": "finding_002",
-  "severity": "blocking",
-  "category": "correctness",
-  "summary": "The new branch skips error propagation on validation failure.",
-  "evidence": [
-    {
-      "path": "src/orchestrator.rs",
-      "line": 118
-    }
-  ],
-  "suggested_fix": "Return the validator error and mark the round as failed."
-}
-```
-
-## Filesystem Layout
-
-Recommended local layout:
-
-```text
-.agent-orch/
-  tasks/
-    t_20260306_001/
-      task.json
-      run.json
-      rounds/
-        001/
-          executor.prompt.md
-          executor.stdout.log
-          executor.stderr.log
-          executor.result.json
-          validation.result.json
-          review.prompt.md
-          review.stdout.log
-          review.stderr.log
-          review.result.json
-          findings.json
-          fixlist.json
-          git.diff
-          metadata.json
-        002/
-          ...
-  worktrees/
-    t_20260306_001/
-```
-
-Properties of this layout:
-
-- task metadata is easy to inspect manually
-- round boundaries are explicit
-- artifacts can be archived or replayed later
-- worktree paths are stable for the task lifetime
-
-## Execution Lifecycle
-
-### 1. Task Creation
+Determines what should be practiced today.
 
 Inputs:
 
-- repo path
-- task instruction
-- selected executor and reviewer
-- validation profile
-- stop policy
+- historical performance
+- last reviewed timestamp
+- item difficulty
+- subject quotas
+- parent policy
 
 Outputs:
 
-- created task id
-- initialized artifact directory
-- reserved worktree path
+- ordered daily review queue
+- next due date per learning item
 
-### 2. Worktree Preparation
+The first version can use a simple spaced-review policy:
 
-Steps:
+- wrong -> return soon
+- partially correct -> moderate interval
+- correct -> longer interval
 
-1. resolve the base ref to a commit
-2. create or reset the task branch from that commit
-3. create the task worktree
-4. verify the worktree is clean
-5. record the initial git state
+### 6. ZeroClaw Execution Service
 
-If preparation fails, the task never enters round execution.
+Executes planned tasks through ZeroClaw.
 
-### 3. Executor Phase
+Responsibilities:
 
-The orchestrator renders an executor prompt with:
+- assemble runtime context
+- attach learner-safe rules
+- invoke ZeroClaw
+- capture agent output
+- enforce timeouts and guardrails
 
-- task instruction
-- current repository status
-- prior round fix list, if any
-- validation policy summary
-- constraints such as "write only in this worktree"
+The service should pass only the minimum required context into each run.
 
-The adapter runs the executor command and records:
+### 7. Scoring and Feedback Service
 
-- command line
-- environment snapshot
-- exit code
-- stdout and stderr
-- start and end commit
-- whether any files changed
+Post-processes the agent result.
 
-No-op detection matters.
-If the executor reports success but produces no diff and no commit movement across repeated rounds, the policy engine should stop instead of looping forever.
+Responsibilities:
 
-### 4. Validation Phase
+- assign structured scores
+- generate learner-friendly feedback
+- record mistakes and hints
+- emit parent-visible diagnostics
 
-Validation runs after each executor round, not only at the end.
-This keeps failures close to the change that introduced them.
+This layer is important because “agent output” and “learning outcome” are not the same thing.
 
-A validation profile is an ordered list of commands with semantics such as:
+### 8. Trace Recorder
 
-- required
-- optional
-- stop-on-fail
-- timeout
+Captures structured execution traces.
 
-Example profile:
+A trace record should include:
 
-```json
-{
-  "name": "rust-default",
-  "commands": [
-    {"name": "fmt", "argv": ["cargo", "fmt", "--check"], "required": true},
-    {"name": "check", "argv": ["cargo", "check"], "required": true},
-    {"name": "test", "argv": ["cargo", "test"], "required": true}
-  ]
-}
+- learner id
+- task id
+- source item id
+- runtime version
+- rule version
+- prompt snapshot id
+- timestamps
+- latency
+- raw output
+- normalized score
+- follow-up scheduling decision
+
+### 9. Dashboard Aggregator
+
+Builds read models for UI pages.
+
+Examples:
+
+- today’s completed tasks
+- streak summary
+- vocabulary mastery chart
+- error hotspots
+- runtime latency by task type
+- low-quality agent runs needing parent review
+
+## Runtime Flow
+
+### Practice Flow
+
+```text
+parent imports content
+   │
+   ▼
+ingestion pipeline normalizes items
+   │
+   ▼
+review scheduler builds learner queue
+   │
+   ▼
+task planner creates one atomic task
+   │
+   ▼
+ZeroClaw adapter executes task
+   │
+   ▼
+scoring service evaluates outcome
+   │
+   ▼
+trace recorder persists artifacts
+   │
+   ▼
+review scheduler updates next due date
+   │
+   ▼
+dashboard reflects new state
 ```
 
-### 5. Review Phase
+### Parent Tuning Flow
 
-Review input should be tightly scoped.
-The reviewer prompt should include only:
-
-- task goal
-- current diff
-- changed files list
-- validation summary
-- selected log excerpts
-- unresolved findings from previous rounds, if still applicable
-
-The reviewer should not receive irrelevant repository context by default.
-This improves signal and makes parsing more stable.
-
-### 6. Parse and Decision Phase
-
-The orchestrator parses the review into findings, computes a round decision, and writes the next fix list.
-
-Possible decisions:
-
-- `success`
-- `continue`
-- `failed_validation`
-- `failed_review_parse`
-- `aborted_by_policy`
-- `fatal_adapter_error`
-- `needs_human`
-
-The decision record must include a human-readable reason and a machine-readable code.
-
-## Stop Policy
-
-The stop policy is critical because naive loops can become expensive and misleading.
-
-Recommended default checks:
-
-1. stop after `max_rounds`
-2. stop after `max_noop_rounds`
-3. stop after `max_parse_failures`
-4. stop on repeated fatal validator failures that do not change across rounds
-5. stop when validation passes and there are no blocking findings
-
-Optional future policies:
-
-- stop on budget exhaustion
-- stop on token usage thresholds
-- stop on repeated identical diffs
-- stop on reviewer confidence below threshold
-
-## Failure Model and Recovery
-
-Failures should be classified, not lumped together.
-
-### Recoverable failures
-
-- executor command exits non-zero but worktree remains usable
-- reviewer command exits non-zero
-- parser fails on malformed review output
-- one validation command times out
-
-Typical response:
-
-- persist artifacts
-- mark round with failure category
-- continue only if policy permits
-
-### Non-recoverable failures
-
-- worktree cannot be created or is corrupted
-- repository base ref cannot be resolved
-- adapter contract is violated
-- artifact store cannot persist required state
-
-Typical response:
-
-- terminate the run
-- mark status as fatal
-- retain partial artifacts for debugging
-
-### Human escalation
-
-Some states should stop automation and ask for human intervention:
-
-- repeated parser instability
-- repeated executor no-op rounds
-- repeated conflicting reviewer findings
-- repository conflicts that require a product decision
-
-## Concurrency Model
-
-The MVP concurrency model should remain conservative.
-
-Allowed:
-
-- multiple tasks on the same machine, each with its own worktree
-- parallel reviewers for different tasks
-- background watchers that react to completed rounds
-
-Disallowed:
-
-- multiple executors writing to the same task worktree
-- reviewer and executor mutating the same worktree simultaneously
-- cross-task artifact directories sharing mutable files
-
-This keeps correctness obvious and debugging tractable.
-
-## CLI Surface
-
-The first CLI should be small and explicit.
-
-```bash
-agent-orch task create --repo . --base main --instruction-file task.md
-agent-orch run start <task-id>
-agent-orch run status <task-id>
-agent-orch run inspect <task-id> --round 2
-agent-orch run resume <task-id>
-agent-orch run abort <task-id>
+```text
+parent inspects bad run
+   │
+   ▼
+trace view shows input, config, output, score
+   │
+   ▼
+parent edits policy / prompt / skill binding
+   │
+   ▼
+next runs carry new version metadata
 ```
 
-Design notes:
+## Data Model
 
-- `task create` defines intent
-- `run start` begins execution
-- `run resume` re-enters a stopped task from persisted state
-- `run inspect` is for artifact discovery, not live control
+Initial core entities:
+
+- `Learner`
+- `ChannelBinding`
+- `LearningItem`
+- `TaskTemplate`
+- `TaskRun`
+- `TaskScore`
+- `ReviewState`
+- `PolicyConfig`
+- `TraceArtifact`
+- `PromptVersion`
+- `SkillVersion`
+
+Key relationships:
+
+- one learner has many learning items
+- one learning item has many task runs
+- one task run has one trace bundle
+- one learner has one active review state per item
+
+## API Surface
+
+Suggested local API groups:
+
+- `POST /learners`
+- `GET /learners/:id`
+- `POST /imports`
+- `POST /planner/generate`
+- `POST /runs`
+- `GET /runs/:id`
+- `GET /learners/:id/dashboard`
+- `GET /learners/:id/review-queue`
+- `POST /policies/:id`
+- `GET /traces/:id`
+
+The API should be local-only in the first version unless explicitly enabled.
+
+## Apple Silicon Constraints
+
+For M1 Pro with 16 GB unified memory, the architecture should assume:
+
+- one active local agent session at a time
+- compact models or remote provider fallback
+- bounded artifact retention
+- no heavy concurrent OCR, indexing, and agent execution together
+
+Operational guidance:
+
+- keep runtime memory budgets explicit
+- serialize expensive jobs
+- store artifacts incrementally instead of loading them all into memory
+- prefer one-task execution over batch generation
+
+## Security and Safety
+
+Even on a single machine, family workflows need boundaries.
+
+Minimum safeguards:
+
+- learner-facing runs use restricted tool access
+- parent configuration views are not exposed in learner UI
+- imported materials are treated as untrusted input
+- all agent actions are logged with trace ids
+- local data is stored under a dedicated app directory
+
+Because the system is child-facing, the response style policy should also be explicit:
+
+- no shaming language
+- concise corrective feedback
+- no unsafe external browsing in learner runs by default
 
 ## Observability
 
-The system should be debuggable without attaching a debugger.
+The first version does not need a full distributed tracing stack, but it does need strong local observability.
 
-Minimum observability requirements:
+Required signals:
 
-- event log per run
-- round-level status summary
-- adapter durations
-- exit codes for every external command
-- git commit and diff references
-- stable file paths for prompts and outputs
+- task latency
+- runtime success/failure
+- scoring distribution
+- ingestion error count
+- queue size
+- review completion rate
 
-Useful future additions:
+Recommended implementation:
 
-- JSONL event stream
-- terminal dashboard
-- metrics export
-- web viewer for round artifacts
+- structured logs with `tracing`
+- per-run JSON trace bundle
+- lightweight dashboard summaries from SQLite
 
-## Security and Isolation
+## Extensibility
 
-`agent-orch` runs untrusted or semi-trusted external tools on local code.
-The architecture should assume mistakes are possible.
+The design should keep three boundaries stable:
 
-Basic safeguards:
+### 1. Runtime boundary
 
-- use task-specific worktrees
-- minimize credentials available to child processes
-- avoid handing reviewers write-capable environments
-- store a minimal environment snapshot for replay
-- record command lines and relevant environment overrides
+ZeroClaw is first, not forever.
+Use an adapter trait so the rest of the system does not depend on one runtime.
 
-The first version does not need a full sandbox, but it should make unsafe behavior visible.
+### 2. Scoring boundary
 
-## Configuration Model
+Different subjects may need different evaluators.
+Math and vocabulary scoring should plug into a common interface.
 
-Configuration should separate stable profiles from per-task overrides.
+### 3. Ingestion boundary
 
-Suggested layers:
+Text import comes first, image/OCR later.
+Both should feed the same normalized learning item model.
 
-1. repo-level defaults
-2. named executor/reviewer profiles
-3. validation profiles
-4. per-task overrides
+## MVP Scope
 
-This keeps common workflows simple while still allowing task-specific tuning.
+The MVP should be intentionally narrow.
 
-## Recommended MVP Scope
+Included:
 
-The MVP should intentionally exclude anything that weakens the core loop.
+- one parent
+- one learner
+- local web API
+- SQLite storage
+- text-based content import
+- English vocabulary sentence tasks
+- single-question math tasks
+- simple spaced review policy
+- ZeroClaw runtime adapter
+- basic run trace and dashboard
 
-### Include
+Deferred:
 
-- single-machine local execution
-- git worktree management
-- one executor adapter for Codex CLI
-- one reviewer adapter for Claude
-- one deterministic validation profile
-- round artifact persistence
-- structured findings and fix list generation
-- resume and inspect commands
+- voice input
+- multi-device sync
+- real-time collaborative channels
+- advanced OCR pipeline
+- multiple learners with household-wide policy inheritance
+- mobile app
 
-### Exclude
+## Phased Build Plan
 
-- distributed execution
-- UI beyond CLI inspection
-- parallel subtasks within one task
-- automatic merge or branch submission
-- advanced prompt optimization
-- generalized plugin marketplaces
+### Phase 1: Local Core
 
-## Evolution Path
+- Rust API server
+- SQLite schema
+- learner profile CRUD
+- content import and normalization
+- basic task planning
 
-### Phase 1: Closed local loop
+### Phase 2: Runtime Integration
 
-Implement one-task-at-a-time orchestration with persistent artifacts and explicit policies.
+- ZeroClaw adapter
+- task execution
+- scoring and trace persistence
 
-### Phase 2: Better operator ergonomics
+### Phase 3: Review Loop
 
-Add watch mode, richer inspection commands, and more robust recovery tools.
+- review scheduler
+- dashboard summaries
+- parent inspection flows
 
-### Phase 3: Multi-task scheduling
+### Phase 4: DX Hardening
 
-Allow several independent tasks to run concurrently on the same machine with shared queueing and capacity controls.
+- prompt/version snapshots
+- run replay
+- better trace inspection
+- config validation
 
-### Phase 4: Broader adapter ecosystem
+## Open Questions
 
-Support alternate executors, reviewers, and validator packs without changing the core runtime model.
+1. Should ZeroClaw be embedded as a library or called as an external process first?
+2. What is the smallest stable adapter contract we can define without leaking runtime internals?
+3. How much scoring should be rule-based versus model-based in the MVP?
+4. Should prompt and skill configs live in filesystem snapshots, SQLite, or both?
+5. What is the exact local UI stack for the first parent dashboard?
 
-## Architectural Decision Summary
+## One-Line Definition
 
-The key architectural decisions are:
-
-1. use git worktrees as the isolation boundary
-2. keep the orchestrator strictly separate from code-writing agents
-3. make the round the primary unit of state and artifact storage
-4. store raw outputs and parsed structured outputs side by side
-5. enforce a single-writer policy per task
-6. keep the MVP local, explicit, and recoverable
-
-If these decisions hold, `agent-orch` can remain small while still being reliable enough to automate the coding-review-fix loop it is meant to own.
+`Loom` is the local control plane around a family learning agent: it decides what to practice, who can see what, how runs are traced, and how learning state accumulates over time.
