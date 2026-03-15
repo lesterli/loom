@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+// -- Device --
+
 #[derive(Debug, Serialize)]
 pub struct DeviceProfile {
     pub chip_name: String,
@@ -28,4 +30,63 @@ pub struct ChipSpec {
     pub cpu_performance_cores: u32,
     pub cpu_efficiency_cores: u32,
     pub available_memory_gb: Vec<u32>,
+}
+
+// -- Catalog --
+
+#[derive(Debug, Deserialize)]
+pub struct ModelCatalog {
+    pub models: Vec<CatalogModel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CatalogModel {
+    pub model_name: String,
+    pub dense_or_moe: String,
+    pub num_hidden_layers: u32,
+    pub num_key_value_heads: u32,
+    pub head_dim: u32,
+    pub total_params_billion: f64,
+    pub active_params_billion: f64,
+    pub artifacts: Vec<CatalogArtifact>,
+    // fields we don't use in estimation but carry for display
+    #[serde(default)]
+    pub num_experts: Option<u32>,
+    #[serde(default)]
+    pub num_experts_per_tok: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CatalogArtifact {
+    pub quantization: String,
+    pub artifact_kind: String,
+    #[serde(default)]
+    pub estimated_file_size_bytes: Option<u64>,
+    pub hf_repo: String,
+}
+
+// -- Estimation result --
+
+#[derive(Debug, Serialize)]
+pub struct FitResult {
+    pub model_name: String,
+    pub quantization: String,
+    pub artifact_kind: String,
+    pub fit_tier: FitTier,
+    pub weights_bytes: u64,
+    pub kv_cache_bytes: u64,
+    pub overhead_bytes: u64,
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+    pub risk_labels: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FitTier {
+    Recommended,
+    Works,
+    Tight,
+    NoFit,
+    Unsupported,
 }
