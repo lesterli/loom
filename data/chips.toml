@@ -1,0 +1,166 @@
+# Apple Silicon Chip Specifications
+# Sources: Apple product pages, Apple Newsroom press releases
+#
+# GPU cores listed are the maximum configuration for each chip tier.
+# Some chips ship in binned variants with fewer GPU cores (noted in comments).
+# Ultra variants are two Max dies fused via UltraFusion (specs ~2x Max).
+
+# ============================================================================
+# M1 Family (2020-2022)
+# ============================================================================
+
+[[chips]]
+chip_identifier = "Apple M1"
+memory_bandwidth_gbps = 68.25
+gpu_cores = 8           # Also available as 7-core GPU variant
+ane_tops = 11.0
+cpu_performance_cores = 4
+cpu_efficiency_cores = 4
+available_memory_gb = [8, 16]
+
+[[chips]]
+chip_identifier = "Apple M1 Pro"
+memory_bandwidth_gbps = 200.0
+gpu_cores = 16          # Also available as 14-core GPU variant
+ane_tops = 11.0
+cpu_performance_cores = 8
+cpu_efficiency_cores = 2
+available_memory_gb = [16, 32]
+
+[[chips]]
+chip_identifier = "Apple M1 Max"
+memory_bandwidth_gbps = 400.0
+gpu_cores = 32          # Also available as 24-core GPU variant
+ane_tops = 11.0
+cpu_performance_cores = 8
+cpu_efficiency_cores = 2
+available_memory_gb = [32, 64]
+
+[[chips]]
+chip_identifier = "Apple M1 Ultra"
+memory_bandwidth_gbps = 800.0
+gpu_cores = 64          # Also available as 48-core GPU variant
+ane_tops = 22.0
+cpu_performance_cores = 16
+cpu_efficiency_cores = 4
+available_memory_gb = [64, 128]
+
+# ============================================================================
+# M2 Family (2022-2023)
+# ============================================================================
+
+[[chips]]
+chip_identifier = "Apple M2"
+memory_bandwidth_gbps = 100.0
+gpu_cores = 10          # Also available as 8-core GPU variant
+ane_tops = 15.8
+cpu_performance_cores = 4
+cpu_efficiency_cores = 4
+available_memory_gb = [8, 16, 24]
+
+[[chips]]
+chip_identifier = "Apple M2 Pro"
+memory_bandwidth_gbps = 200.0
+gpu_cores = 19          # Also available as 16-core GPU variant
+ane_tops = 15.8
+cpu_performance_cores = 8
+cpu_efficiency_cores = 4
+available_memory_gb = [16, 32]
+
+[[chips]]
+chip_identifier = "Apple M2 Max"
+memory_bandwidth_gbps = 400.0
+gpu_cores = 38          # Also available as 30-core GPU variant
+ane_tops = 15.8
+cpu_performance_cores = 8
+cpu_efficiency_cores = 4
+available_memory_gb = [32, 64, 96]
+
+[[chips]]
+chip_identifier = "Apple M2 Ultra"
+memory_bandwidth_gbps = 800.0
+gpu_cores = 76          # Also available as 60-core GPU variant
+ane_tops = 31.6
+cpu_performance_cores = 16
+cpu_efficiency_cores = 8
+available_memory_gb = [64, 128, 192]
+
+# ============================================================================
+# M3 Family (2023-2024)
+# ============================================================================
+
+[[chips]]
+chip_identifier = "Apple M3"
+memory_bandwidth_gbps = 100.0
+gpu_cores = 10          # Also available as 8-core GPU variant
+ane_tops = 18.0
+cpu_performance_cores = 4
+cpu_efficiency_cores = 4
+available_memory_gb = [8, 16, 24]
+
+[[chips]]
+chip_identifier = "Apple M3 Pro"
+memory_bandwidth_gbps = 150.0
+gpu_cores = 18          # Also available as 14-core GPU variant
+ane_tops = 18.0
+cpu_performance_cores = 6
+cpu_efficiency_cores = 6
+available_memory_gb = [18, 36]
+
+[[chips]]
+chip_identifier = "Apple M3 Max"
+memory_bandwidth_gbps = 400.0
+gpu_cores = 40          # Also available as 30-core GPU variant
+ane_tops = 18.0
+cpu_performance_cores = 12
+cpu_efficiency_cores = 4
+available_memory_gb = [36, 48, 64, 96, 128]
+
+[[chips]]
+chip_identifier = "Apple M3 Ultra"
+memory_bandwidth_gbps = 800.0
+gpu_cores = 80          # Also available as 60-core GPU variant
+ane_tops = 36.0
+cpu_performance_cores = 24
+cpu_efficiency_cores = 8
+available_memory_gb = [64, 128, 192]
+
+# ============================================================================
+# M4 Family (2024-2025)
+# ============================================================================
+
+[[chips]]
+chip_identifier = "Apple M4"
+memory_bandwidth_gbps = 120.0
+gpu_cores = 10
+ane_tops = 38.0
+cpu_performance_cores = 4
+cpu_efficiency_cores = 6
+available_memory_gb = [16, 24, 32]
+
+[[chips]]
+chip_identifier = "Apple M4 Pro"
+memory_bandwidth_gbps = 273.0
+gpu_cores = 20          # Also available as 16-core GPU variant
+ane_tops = 38.0
+cpu_performance_cores = 10
+cpu_efficiency_cores = 4
+available_memory_gb = [24, 48]
+
+[[chips]]
+chip_identifier = "Apple M4 Max"
+memory_bandwidth_gbps = 546.0
+gpu_cores = 40          # Also available as 32-core GPU variant
+ane_tops = 38.0
+cpu_performance_cores = 12
+cpu_efficiency_cores = 4
+available_memory_gb = [36, 48, 64, 128]
+
+[[chips]]
+chip_identifier = "Apple M4 Ultra"
+memory_bandwidth_gbps = 819.2
+gpu_cores = 80          # Also available as 64-core GPU variant
+ane_tops = 76.0
+cpu_performance_cores = 24
+cpu_efficiency_cores = 8
+available_memory_gb = [128, 192, 256, 512]
