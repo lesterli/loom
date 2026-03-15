@@ -22,6 +22,7 @@ pub struct ChipSpecTable {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields required by TOML deserialization
 pub struct ChipSpec {
     pub chip_identifier: String,
     pub memory_bandwidth_gbps: f64,
@@ -40,6 +41,7 @@ pub struct ModelCatalog {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields required by TOML deserialization
 pub struct CatalogModel {
     pub model_name: String,
     pub dense_or_moe: String,
@@ -49,7 +51,6 @@ pub struct CatalogModel {
     pub total_params_billion: f64,
     pub active_params_billion: f64,
     pub artifacts: Vec<CatalogArtifact>,
-    // fields we don't use in estimation but carry for display
     #[serde(default)]
     pub num_experts: Option<u32>,
     #[serde(default)]
@@ -57,6 +58,7 @@ pub struct CatalogModel {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields required by TOML deserialization
 pub struct CatalogArtifact {
     pub quantization: String,
     pub artifact_kind: String,
@@ -83,6 +85,7 @@ pub struct FitResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)] // Unsupported used when backend doesn't support artifact
 pub enum FitTier {
     Recommended,
     Works,

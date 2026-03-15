@@ -15,6 +15,7 @@ pub struct Check {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)] // Fail used when critical backend check fails
 pub enum CheckStatus {
     Pass,
     Warn,
