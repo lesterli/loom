@@ -1,3 +1,6 @@
+mod hardware;
+mod types;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -54,8 +57,20 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::DetectHardware { json: _ } => {
-            eprintln!("berth detect-hardware: not yet implemented");
+        Command::DetectHardware { json } => {
+            match hardware::detect() {
+                Ok(profile) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&profile).unwrap());
+                    } else {
+                        print_hardware(&profile);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Command::EstimateModels { .. } => {
             eprintln!("berth estimate-models: not yet implemented");
@@ -66,5 +81,26 @@ fn main() {
         Command::Doctor { json: _ } => {
             eprintln!("berth doctor: not yet implemented");
         }
+    }
+}
+
+fn print_hardware(p: &types::DeviceProfile) {
+    println!("Chip:       {} ({})", p.chip_name, p.chip_family);
+    println!("OS:         macOS {}", p.os_version);
+    println!("Memory:     {} GB total, {:.1} GB available",
+        p.memory_total_bytes / (1024 * 1024 * 1024),
+        p.memory_available_bytes as f64 / (1024.0 * 1024.0 * 1024.0),
+    );
+    if let Some(bw) = p.memory_bandwidth_gbps {
+        println!("Bandwidth:  {} GB/s", bw);
+    }
+    if let (Some(p_cores), Some(e_cores)) = (p.cpu_performance_cores, p.cpu_efficiency_cores) {
+        println!("CPU:        {}P + {}E cores", p_cores, e_cores);
+    }
+    if let Some(gpu) = p.gpu_cores {
+        println!("GPU:        {} cores", gpu);
+    }
+    if let Some(ane) = p.ane_tops {
+        println!("ANE:        {} TOPS", ane);
     }
 }
