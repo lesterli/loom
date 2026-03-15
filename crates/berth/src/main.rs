@@ -1,3 +1,4 @@
+mod artifact;
 mod catalog;
 mod doctor;
 mod estimator;
@@ -101,8 +102,20 @@ fn main() {
                 print_estimate_table(&results);
             }
         }
-        Command::InspectArtifact { .. } => {
-            eprintln!("berth inspect-artifact: not yet implemented");
+        Command::InspectArtifact { path, json } => {
+            match artifact::inspect(&path) {
+                Ok(profile) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&profile).unwrap());
+                    } else {
+                        artifact::print_profile(&profile);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Command::Doctor { json } => {
             let report = doctor::run();
