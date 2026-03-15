@@ -1,4 +1,5 @@
 mod catalog;
+mod doctor;
 mod estimator;
 mod hardware;
 mod types;
@@ -103,8 +104,13 @@ fn main() {
         Command::InspectArtifact { .. } => {
             eprintln!("berth inspect-artifact: not yet implemented");
         }
-        Command::Doctor { json: _ } => {
-            eprintln!("berth doctor: not yet implemented");
+        Command::Doctor { json } => {
+            let report = doctor::run();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                doctor::print_report(&report);
+            }
         }
     }
 }
