@@ -1,11 +1,11 @@
 [package]
-name = "berth"
+name = "fit-models"
 version = "0.1.0"
 edition = "2024"
-description = "What Qwen3.5 models can this machine run?"
+description = "What models can this machine run?"
 
 [[bin]]
-name = "berth"
+name = "fit-models"
 path = "src/main.rs"
 
 [dependencies]
