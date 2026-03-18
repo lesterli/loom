@@ -1,26 +1,39 @@
+from __future__ import annotations
+
+import json
+
+from sentra.fallbacks import build_fallback_strategy
+from sentra.llm import LLMConfigError, LLMResponseError, llm_enabled, structured_completion
+from sentra.schemas import StrategySchema
 from sentra.state import TradingState
 
 
-def strategist_node(state: TradingState) -> TradingState:
-    query = state.get("query", "").lower()
-    is_high_risk = any(token in query for token in ("all in", "all-in", "10x", "leverage"))
-    market_price = float(state.get("market_data", {}).get("price") or 0.0)
-    lower_entry = round(market_price * 0.995, 2) if market_price else 68000.0
-    upper_entry = round(market_price * 1.005, 2) if market_price else 68800.0
-    take_profit = round(market_price * 1.05, 2) if market_price else 72000.0
-    stop_loss = round(market_price * 0.955, 2) if market_price else 65500.0
-    strategy = {
-        "action": "buy",
-        "thesis": "Momentum and sentiment are supportive in the current fetched market regime.",
-        "time_horizon": "swing, 3-10 days",
-        "position_size_pct": 10.0,
-        "entry_zone": {"low": lower_entry, "high": upper_entry},
-        "take_profit": take_profit,
-        "stop_loss": stop_loss,
-        "invalidation": "Lose short-term support with weakening momentum.",
-    }
-    if is_high_risk:
-        strategy["position_size_pct"] = 40.0
-        strategy["thesis"] = "User asked for an aggressive trade in a volatile setup."
+def generate_strategy(state: TradingState) -> tuple[dict, str, str | None]:
+    if llm_enabled():
+        system_prompt = (
+            "You are a trading strategist. Convert the analysis into a conservative, structured strategy. "
+            "If confidence is low or data quality is degraded, prefer smaller sizing or hold."
+        )
+        user_prompt = (
+            f"User query: {state.get('query', '')}\n"
+            f"User profile: {state.get('user_profile', {})}\n"
+            f"Market data: {json.dumps(state.get('market_data', {}), default=str)}\n"
+            f"Technical data: {json.dumps(state.get('technical_data', {}), default=str)}\n"
+            f"Analysis: {json.dumps(state.get('analysis', {}), default=str)}\n"
+            "Return a structured trading strategy."
+        )
+        try:
+            parsed = structured_completion(
+                StrategySchema,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+            return parsed.model_dump(), "llm", None
+        except (LLMConfigError, LLMResponseError, Exception) as exc:
+            return build_fallback_strategy(state), "fallback", str(exc)
+    return build_fallback_strategy(state), "fallback", None
 
+
+def strategist_node(state: TradingState) -> TradingState:
+    strategy, _, _ = generate_strategy(state)
     return {"strategy": strategy}
