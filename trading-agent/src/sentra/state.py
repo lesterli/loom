@@ -24,6 +24,7 @@ class TradingState(TypedDict, total=False):
     news_data: list[dict[str, Any]]
     onchain_data: dict[str, Any]
     technical_data: dict[str, Any]
+    resolved_asset_id: str
 
     data_quality_flags: list[str]
     tool_errors: list[str]
