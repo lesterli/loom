@@ -2,7 +2,7 @@ use std::process::Command;
 
 use crate::types::{ChipSpec, ChipSpecTable, DeviceProfile};
 
-const CHIPS_TOML: &str = include_str!("../../../data/chips.toml");
+const CHIPS_TOML: &str = include_str!("../data/chips.toml");
 
 pub fn detect() -> Result<DeviceProfile, String> {
     let chip_name = detect_chip_name()?;
